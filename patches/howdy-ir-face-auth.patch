@@ -1,0 +1,56 @@
+diff --git a/howdy/src/recorders/video_capture.py b/howdy/src/recorders/video_capture.py
+index 15888a5..256a968 100644
+--- a/howdy/src/recorders/video_capture.py
++++ b/howdy/src/recorders/video_capture.py
+@@ -96,12 +96,51 @@ class VideoCapture:
+ 			raise
+ 		return frame, gsframe
+ 
++	def _enable_ir_face_auth(self):
++		"""
++		Sets the Microsoft camera extension unit FACE_AUTHENTICATION control to
++		authentication mode, which turns on the IR emitter
++		"""
++		import ctypes
++		import fcntl
++		import struct
++
++		# UVCIOC_CTRL_QUERY and the UVC request codes
++		ioctl_query = 0xC0107521
++		set_cur, get_cur, get_len = 0x01, 0x81, 0x85
++		unit = self.config.getint("video", "ir_face_auth_unit", fallback=7)
++		selector = 6
++		mode = self.config.getint("video", "ir_face_auth_mode", fallback=2)
++
++		def query(fd, request, size, data=None):
++			buf = (ctypes.c_uint8 * size)(*(data or []))
++			fcntl.ioctl(fd, ioctl_query, bytearray(struct.pack("BBBxHxxP", unit, selector, request, size, ctypes.addressof(buf))))
++			return list(buf)
++
++		try:
++			fd = os.open(self.config.get("video", "device_path"), os.O_RDWR)
++			try:
++				size = struct.unpack("<H", bytes(query(fd, get_len, 2)))[0]
++				value = query(fd, get_cur, size)
++				# Byte 2 holds the active mode: 1 is non-authentication, 2 is alternating IR
++				value[2] = mode
++				query(fd, set_cur, size, value)
++			finally:
++				os.close(fd)
++		except OSError as err:
++			print(_("Could not enable IR face authentication mode: {}").format(err))
++
+ 	def _create_reader(self):
+ 		"""
+ 		Sets up the video reader instance
+ 		"""
+ 		recording_plugin = self.config.get("video", "recording_plugin", fallback="opencv")
+ 
++		# Switch the camera to Windows Hello authentication mode (alternating IR
++		# illumination) before streaming starts, the camera resets it on stream stop
++		if self.config.getboolean("video", "ir_face_auth", fallback=False):
++			self._enable_ir_face_auth()
++
+ 		if recording_plugin == "ffmpeg":
+ 			# Set the capture source for ffmpeg
+ 			from recorders.ffmpeg_reader import ffmpeg_reader

@@ -1,0 +1,4 @@
+; Allow Howdy (run by pam_howdy inside SDDM, domain xdm_t) to mmap the IR camera
+(allow xdm_t v4l_device_t (chr_file (map)))
+; Python cannot write __pycache__ under /usr/lib64/howdy; harmless, so silence it
+(dontaudit xdm_t lib_t (dir (write add_name)))
